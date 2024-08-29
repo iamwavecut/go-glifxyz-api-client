@@ -1,4 +1,4 @@
-package glifclient
+package glifxyz
 
 import (
 	"bufio"
