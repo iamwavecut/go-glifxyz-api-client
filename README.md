@@ -1,4 +1,4 @@
-# Go Glif API Client
+# Go [glif.app](https://glif.app/) API Client
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/iamwavecut/go-glifxyz-api-client.svg)](https://pkg.go.dev/github.com/iamwavecut/go-glifxyz-api-client)
 [![Go Report Card](https://goreportcard.com/badge/github.com/iamwavecut/go-glifxyz-api-client)](https://goreportcard.com/report/github.com/iamwavecut/go-glifxyz-api-client)
