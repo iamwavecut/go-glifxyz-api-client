@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ const (
 	EndpointUser      = "/api/user"
 	EndpointMe        = "/api/me"
 	EndpointSpheres   = "/api/spheres"
-	DefaultBaseURL    = "https://glif.app"
+	DefaultBaseURL    = "https://simple-api.glif.app"
 )
 
 type GlifClient struct {
@@ -41,9 +42,10 @@ type AddressList struct {
 }
 
 type RunResponse struct {
-	ID     string      `json:"id"`
-	Inputs interface{} `json:"inputs"`
-	Output string      `json:"output"`
+	ID         string `json:"id"`
+	Inputs     any    `json:"inputs"`
+	Output     string `json:"output"`
+	OutputFull any    `json:"outputFull,omitempty"`
 }
 
 type GlifInfo struct {
@@ -54,10 +56,10 @@ type GlifInfo struct {
 }
 
 type GlifRun struct {
-	ID     string      `json:"id"`
-	GlifID string      `json:"glifId"`
-	Inputs interface{} `json:"inputs"`
-	Output interface{} `json:"output"`
+	ID     string `json:"id"`
+	GlifID string `json:"glifId"`
+	Inputs any    `json:"inputs"`
+	Output any    `json:"output"`
 	// Add other fields as needed
 }
 
@@ -105,8 +107,20 @@ func WithAPIToken(token string) ClientOption {
 		c.APIToken = token
 	}
 }
+func WithEnvToken(envVar string) ClientOption {
+	return func(c *GlifClient) {
+		if envVar == "" {
+			envVar = "GLIF_API_TOKEN"
+		}
+		if token, ok := os.LookupEnv(envVar); ok {
+			c.APIToken = token
+		} else {
+			c.Logger.Error("GLIF API token not set in environment variable", "envVar", envVar)
+		}
+	}
+}
 
-func NewGlifClient(opts ...ClientOption) *GlifClient {
+func NewGlifClient(options ...ClientOption) *GlifClient {
 	c := &GlifClient{
 		BaseURL:     DefaultBaseURL,
 		Client:      &http.Client{Timeout: 30 * time.Second},
@@ -114,23 +128,28 @@ func NewGlifClient(opts ...ClientOption) *GlifClient {
 		RateLimiter: rate.NewLimiter(rate.Limit(10), 1), // Default rate limit: 10 requests per second
 	}
 
-	for _, opt := range opts {
+	for _, opt := range options {
 		opt(c)
 	}
 
 	return c
 }
 
-func (c *GlifClient) RunSimple(ctx context.Context, modelID string, args interface{}) (*RunResponse, error) {
+func (c *GlifClient) RunSimple(ctx context.Context, modelID string, args ...any) (*RunResponse, error) {
 	if err := c.RateLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limit exceeded: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("%s%s%s", c.BaseURL, EndpointRun, modelID)
+	endpoint := c.BaseURL
 
-	payload, err := json.Marshal(map[string]interface{}{
-		"id":     modelID,
-		"inputs": args,
+	payload, err := json.Marshal(map[string]any{
+		"id": modelID,
+		"inputs": func() any {
+			if len(args) > 0 {
+				return args
+			}
+			return []any{}
+		}(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal payload: %w", err)
@@ -154,7 +173,6 @@ func (c *GlifClient) RunSimple(ctx context.Context, modelID string, args interfa
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-
 	var runResponse RunResponse
 	if err := json.NewDecoder(resp.Body).Decode(&runResponse); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
@@ -230,9 +248,9 @@ func (c *GlifClient) GetSpheres(ctx context.Context, params url.Values) ([]Spher
 	return result, err
 }
 
-func (c *GlifClient) StreamRunSimple(ctx context.Context, modelID string, args interface{}, callback func([]byte) error) error {
+func (c *GlifClient) StreamRunSimple(ctx context.Context, modelID string, args any, callback func([]byte) error) error {
 	endpoint := fmt.Sprintf("%s%s%s", c.BaseURL, EndpointRun, modelID)
-	payload, err := json.Marshal(map[string]interface{}{
+	payload, err := json.Marshal(map[string]any{
 		"id":     modelID,
 		"inputs": args,
 	})
@@ -275,7 +293,7 @@ func (c *GlifClient) StreamRunSimple(ctx context.Context, modelID string, args i
 	return nil
 }
 
-func (c *GlifClient) getJSON(ctx context.Context, endpoint string, v interface{}) error {
+func (c *GlifClient) getJSON(ctx context.Context, endpoint string, v any) error {
 	if err := c.RateLimiter.Wait(ctx); err != nil {
 		return fmt.Errorf("rate limit exceeded: %w", err)
 	}
